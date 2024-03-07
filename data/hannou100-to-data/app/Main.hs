@@ -4,11 +4,11 @@
 module Main where
 
 import Data.Aeson
-import Data.Text as T
-import Data.Text.IO as TIO
 import Data.ByteString.Internal
 import Data.ByteString.Lazy as BL
 import Data.ByteString.Lazy.UTF8 as BLU
+import Data.Text as T
+import Data.Text.IO as TIO
 import GHC.Generics
 import System.Environment
 import System.Exit
