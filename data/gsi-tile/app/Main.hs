@@ -1,8 +1,10 @@
 module Main where
 
-import qualified MyLib (someFunc)
+import qualified GsiTile (someFunc)
+import qualified GeoAngle (someFunc)
 
 main :: IO ()
 main = do
   putStrLn "Hello, Haskell!"
-  MyLib.someFunc
+  GsiTile.someFunc
+  GeoAngle.someFunc

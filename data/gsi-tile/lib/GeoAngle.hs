@@ -1,4 +1,4 @@
-module MyLib (someFunc) where
+module GeoAngle (someFunc) where
 
 someFunc :: IO ()
 someFunc = putStrLn "someFunc"
