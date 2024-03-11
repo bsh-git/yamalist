@@ -100,6 +100,7 @@ executable gsi-tile
         either ^>=5.0.0,
         process ^>=1.6.0.0,
         xml ^>=1.3.0.0,
+        temporary ^>=1.3,
         gsi-tile
 
 --        regex-tdfa ^>=1.3.2.0,

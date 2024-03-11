@@ -3,6 +3,7 @@ module GsiTile (
   , getOffset
   , tileForCoordinate
   , url
+  , extendToEast
   ) where
 
 import Data.Bits (shift)
@@ -36,7 +37,7 @@ gudermann y = 180.0 / pi * asin (tanh y)
 
 -- |
 -- GSIのタイルは、経度 [-180°, 180°] 緯度 [85.0511°, -85.011°] の範囲をメルカトル図法に射影して、 縦横 2^(ズームレベル) に分割する
---  
+--
 -- >>> Coordinate (Double_ 139.10177) (Double_ 35.865422)
 -- Coordinate 139°6'6.372" 35°51'55.519"
 --
@@ -100,3 +101,64 @@ getOffset tile c = (xoff, yoff)
     xoff = floor $ (fromIntegral (xpixels tile)) * (lon - tiWest) / width
     height = tiNorth - tiSouth
     yoff = floor $ (fromIntegral (ypixels tile)) * (tiNorth - lat) / height
+
+
+-- | タイル内のピクセル位置に対応する経度緯度
+--
+getCoord :: TileInfo -> (Int, Int) -> Coordinate
+getCoord tile (x, y) = Coordinate lon lat
+  where
+    tiEast = (toDouble $ lonEast tile)
+    tiWest = (toDouble $ lonWest tile)
+    tiNorth = (toDouble $ latNorth tile)
+    tiSouth = (toDouble $ latSouth tile)
+    width = tiEast - tiWest
+    lon = Double_ (tiWest + width * (fromIntegral x) / (fromIntegral (xpixels tile)))
+    -- XXX use lambert and gundermann
+    height = tiNorth - tiSouth
+    lat = Double_ (tiNorth - height * (fromIntegral y) / (fromIntegral (ypixels tile)))
+
+-- |
+-- タイルを複数つないで大きくする
+--
+-- >>> let (Right t) = tileForCoordinate 17 $ Coordinate (Double_ 139.10177) (Double_ 35.865422)
+-- >>> let (Right te) = tileForCoordinate 17 $ Coordinate (Double_ 139.103) (Double_ 35.865422)
+-- >>> let (Right tw) = tileForCoordinate 17 $ Coordinate (Double_ 139.099) (Double_ 35.865422)
+-- >>> let t' = extendToEast t
+-- >>> (xspan t', yspan t', xpixels t', ypixels t', zoomLevel t')
+-- (2,1,512,256,17)
+-- >>> (xidx t', yidx t', lonWest t', latNorth t', latSouth t') == (xidx t, yidx t, lonWest t, latNorth t, latSouth t)
+-- True
+-- >>> lonWest t' == lonWest te
+-- True
+-- >>> let t' = extendToWest t
+-- >>> (xspan t', yspan t', xpixels t', ypixels t', zoomLevel t')
+-- (2,1,512,256,17)
+-- >>> (xidx t', yidx t', lonEast t', latNorth t', latSouth t') == (xidx t - 1, yidx t, lonEast t, latNorth t, latSouth t)
+-- True
+-- >>> lonWest t' == lonWest tw
+-- True
+-- >>> let t' = extendToSouth t
+-- >>> (xspan t', yspan t', xpixels t', ypixels t', zoomLevel t')
+-- (1,2,256,512,17)
+-- >>> (xidx t', yidx t', lonWest t', lonEast t', latNorth t') == (xidx t, yidx t, lonWest t, lonEast t, latNorth t)
+-- True
+
+extendToEast:: TileInfo -> TileInfo
+extendToEast tile@(TileInfo xidx_ yidx_ zoom north south west east xpix ypix xspan_ yspan_) =
+  TileInfo xidx_ yidx_ zoom north south west newEast (xpix + 256) ypix (xspan_ + 1) yspan_
+  where
+    Coordinate newEast _ = getCoord tile ((xpix + 256), 0)
+
+
+extendToWest:: TileInfo -> TileInfo
+extendToWest tile@(TileInfo xidx_ yidx_ zoom north south west east xpix ypix xspan_ yspan_) =
+  TileInfo (xidx_ -1) yidx_ zoom north south newWest east (xpix + 256) ypix (xspan_ + 1) yspan_
+  where
+    Coordinate newWest _ = getCoord tile (- 256, 0)
+
+
+extendToNorth:: TileInfo -> TileInfo
+extendToNorth t = t
+extendToSouth:: TileInfo -> TileInfo
+extendToSouth t = t

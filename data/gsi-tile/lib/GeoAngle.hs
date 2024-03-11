@@ -6,7 +6,6 @@ module GeoAngle ( Angle(..)
                 , Coordinate(..)
                 , latitude
                 , longitude
-                , geoangleTest
                 ) where
 
 import GHC.Read
@@ -14,9 +13,6 @@ import Text.ParserCombinators.ReadPrec ()
 import Text.Printf
 import qualified Text.Read.Lex as L
 import Text.Read
-
-geoangleTest :: Coordinate
-geoangleTest = Coordinate (Double_ 135.0) (Double_ 35.0)
 
 --
 -- 経度, 緯度

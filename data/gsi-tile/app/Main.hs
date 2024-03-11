@@ -1,15 +1,17 @@
 module Main where
 
 -- import Debug.Trace
-import Control.Monad (when, unless)
+import Control.Monad (when, unless, forM) -- void
 --import Data.Bits
 import Data.Either.Combinators
-import Data.Foldable (foldlM, forM_)
+import Data.Foldable (foldlM)
+import Data.List
 import Data.Maybe (catMaybes)
 import System.Console.GetOpt
 import System.Environment
 import System.Exit
 import System.IO
+import System.IO.Temp
 import System.Process (callCommand)
 import Text.Printf
 import Text.Read (readMaybe)
@@ -23,6 +25,7 @@ data CommandLineOpt =
   | MarkPoint
   | OutputImageFile String
   | UseElev | UseOcr
+  | XSpan String
   | Help
   deriving (Show)
 
@@ -37,6 +40,7 @@ options =
   , Option []["mark"] (NoArg MarkPoint) "add a mark in the tile"
   , Option ['T'] ["find-peak-ocr"] (NoArg UseOcr) "find a peak using OCR on the tile"
   -- , Option ['P'] ["find-peak"] (NoArg UseElev) "find a peak using elevation data"
+  , Option ['x']["xspan"] (ReqArg XSpan "N") "concatnate N tiles hollizontally"
   , Option ['?']["help"] (NoArg Help) "show help"
   ]
 
@@ -45,6 +49,7 @@ data ProgramOptions = ProgramOptions {
   , optUrlOnly :: Bool
   , optMark :: Bool
   , optPeak :: PeakSearchingMethod
+  , optXSpan :: Int
   , optHelp :: Bool
   } deriving Show
 
@@ -53,7 +58,7 @@ getOptions args = do
   (opts, a) <- case getOpt RequireOrder options args of
     (f,a,[]) -> return (f,a)
     (_,_,err) -> Left (concat err)
-  o <- foldlM checkOption (ProgramOptions Nothing False False NoMethod False) opts
+  o <- foldlM checkOption (ProgramOptions Nothing False False NoMethod 1 False) opts
 
   return (o, a)
 
@@ -68,6 +73,7 @@ getOptions args = do
                    OutputImageFile s -> return $ opts { optOutputImageFile = Just s }
                    UseOcr -> return $ opts { optPeak = Ocr }
                    UseElev -> return $ opts { optPeak = ElevData }
+                   XSpan n -> return $ opts { optXSpan = (read n) }
                    
 main :: IO ()
 main = getArgs >>= (either optError main') . getOptions
@@ -106,7 +112,12 @@ main = getArgs >>= (either optError main') . getOptions
                        (readMaybe s :: Maybe Angle)
         
     doTile :: ProgramOptions -> TileInfo -> Coordinate -> IO ()
-    doTile opts tile coord = do
+    doTile opts tile' coord = do
+      let tile = case (optXSpan opts) of
+            1 -> tile'
+            2 -> extendToEast tile'
+            _ -> undefined
+
       unless (optUrlOnly opts) (printInfo tile coord)
       printUrls (optUrlOnly opts) tile
 
@@ -116,8 +127,8 @@ main = getArgs >>= (either optError main') . getOptions
       if optPeak opts == NoMethod
         then case (optOutputImageFile opts, optMark opts) of
                (Nothing, _) -> return ()
-               (Just outputfile, mark) -> getTileImage tile coord outputfile opts
-        else findPeak tile coord opts
+               (Just outputfile, mark) -> withTmp $ getTileImage tile coord outputfile opts
+        else withTmp $ findPeak tile coord opts
 
     printInfo :: TileInfo -> Coordinate -> IO ()
     printInfo tile coord =
@@ -137,23 +148,52 @@ main = getArgs >>= (either optError main') . getOptions
         putStr $ concatMap (\(x,y) -> prnt x y (url tile x y))
                            [(x,y) | x <- [0 .. (xspan tile) -1], y <- [0 .. (yspan tile) -1]]
 
-getTileImage :: TileInfo -> Coordinate -> String -> ProgramOptions -> IO ()
-getTileImage tile coord outputfile opts = do
-  let tileimg = if (optMark opts) then "tmp.png" else outputfile
+    withTmp = withSystemTempDirectory "tmpdir"
+
+getTileImage :: TileInfo -> Coordinate -> String -> ProgramOptions -> FilePath -> IO ()
+getTileImage tile coord outputfile opts tmpdir = do
+  let tileimg = if (optMark opts) then (printf "%s/tmp.ppm" tmpdir) else outputfile
   -- XXX escaspe special characters in outputfile and url
-  downloadTileImage tile 0 0 tileimg
+  downloadTileImage tile tmpdir tileimg
+
   when (optMark opts) $ do
-    callCommand $ printf "pngtopam '%s' | ppmdraw -script='%s' | pamtopng > '%s'" tileimg makeScript outputfile
+    callCommand $ printf "ppmdraw -script='%s' %s %s > '%s'"
+                         makeScript tileimg
+                         (if ".ppm" `isSuffixOf` outputfile then "" else " | pamtopng")
+                         outputfile
   
   where
     makeScript :: String
     makeScript = makeScriptToMarkCoord tile coord "blue"
-  
 
-downloadTileImage :: TileInfo -> Int -> Int -> String -> IO ()
-downloadTileImage tile xspanidx yspanidx filename =
-  callCommand (printf "wget -O '%s' '%s'" filename (url tile xspanidx yspanidx))
+downloadSingleTile :: TileInfo -> Int -> Int -> String -> IO ()
+downloadSingleTile tile xspanidx yspanidx filename =
+  if ".ppm" `isSuffixOf` filename
+    then callCommand $ printf "wget -nv -O - '%s' | pngtopam > '%s'" (url tile xspanidx yspanidx) filename
+    else callCommand $ printf "wget -nv -O '%s' '%s'" filename (url tile xspanidx yspanidx)
 
+downloadTileImage :: TileInfo -> FilePath -> FilePath -> IO ()
+downloadTileImage tile tmpdir output =
+  case (xspan tile, yspan tile) of
+    (1, 1) -> downloadSingleTile tile 0 0 output
+    (_, 1) -> makeRowImage tile tmpdir output 0
+    (_, ys) -> (forM [0..ys-1] $ \x -> return "") >>= concatVertical output
+
+  where
+    concatVertical :: FilePath -> [FilePath] -> IO ()
+    concatVertical output files = return ()
+
+makeRowImage :: TileInfo -> FilePath -> FilePath -> Int -> IO ()
+makeRowImage tile tmpdir output yidx_ = do
+  let toPpm = ".ppm" `isSuffixOf` output
+  files <- forM [0 .. (xspan tile)-1] $ \xidx_ -> do
+    let tmpname = printf "%s/%04d" tmpdir xidx_
+    downloadSingleTile tile xidx_ yidx_ (tmpname ++ ".png")
+    let out = tmpname ++ ".ppm"
+    callCommand (printf "pngtopam '%s.png' > '%s'" tmpname out )
+    return out
+  let prog = (++) "pamcat -lr " $ intercalate " " $ map (printf "'%s'") files
+  callCommand $ (if toPpm then prog else prog ++ "| pamtopng") ++ " > " ++ output
 
 data DetectedString = DetectedString {
     hpos :: Int
@@ -163,37 +203,36 @@ data DetectedString = DetectedString {
   , txt :: String
   } deriving (Show)
 
-findPeak :: TileInfo -> Coordinate -> ProgramOptions -> IO ()
-findPeak tile coord opts = do
-  let tileimg = case (optMark opts, optOutputImageFile opts) of
-                  (False, Nothing) -> "tmp.png"
-                  (False, Just f) -> f
-                  (True, _) -> "tmp.png"
-  downloadTileImage tile 0 0 tileimg
-  callCommand $ printf "pngtopam %s > tmp2.ppm" tileimg
-  callCommand "ppmchange black black -remainder=white tmp2.ppm | pamtopng > tmp2.png"
-  callCommand  "tesseract tmp2.png tmp3 --psm 11 alto"
-  strings <- readFile "tmp3.xml" >>=  pure . getStrings . parseXML
-  if null strings
+findPeak :: TileInfo -> Coordinate -> ProgramOptions -> FilePath -> IO ()
+findPeak tile_ coord opts tmpdir = do
+  let (x, y) = getOffset tile_ coord
+  let tile = if ((fromIntegral x) / (fromIntegral (xpixels tile_))) < (0.5 :: Float) then tile_ else extendToEast tile_
+  downloadTileImage tile tmpdir (tmpfile 1 "ppm")
+  callCommand $ printf "ppmchange black black -remainder=white '%s' | pamtopng > '%s'" (tmpfile 1 "ppm") (tmpfile 2 "png")
+  callCommand $ printf "tesseract '%s' '%s' --psm 11 alto" (tmpfile 2 "png") (tmpfile 3 "")
+  strings <- readFile (tmpfile 3 "xml") >>=  pure . getStrings . parseXML
+  script <- if null strings
     then do
       hPutStrLn stderr "can't find any peak"
-      case (optMark opts, optOutputImageFile opts) of
-        (_, Nothing) -> return()
-        (False, _) -> return ()    -- already saved in that name
-        (True, (Just f)) -> callCommand $ printf "mv '%s' '%s'" tileimg f
+      pure $ makeScriptToMarkCoord tile coord "blue"
     else do
-      let peak = peakCoord $ head strings
+      let peak = peakCoord tile $ head strings
       putStrLn $ printf "Peak=%s,%s" (show (longitude peak)) (show (latitude peak))
-      case (optMark opts, optOutputImageFile opts) of
-        (True, Just output) -> do
-          let script = makeScriptToMarkCoord tile coord "blue"
-                       ++ "setcolor brown;"
-                       ++ (concat $ map makeScriptToBox strings)
-                       ++ makeScriptToMarkCoord tile peak "red"
-          callCommand $ printf "ppmdraw --script='%s' tmp2.ppm | pamtopng > '%s'" script output
-        (_, _) -> return ()
+      pure $ makeScriptToMarkCoord tile coord "blue"
+             ++ "setcolor brown;"
+             ++ (concat $ map makeScriptToBox strings)
+             ++ makeScriptToMarkCoord tile peak "red"
+
+  case (optMark opts, optOutputImageFile opts) of
+    (True, Just output) -> callCommand $ printf "ppmdraw -script='%s' '%s' | pamtopng > '%s'" script (tmpfile 1 "ppm") output
+    (False, Just output) -> callCommand $ printf "pamtopng '%s' > '%s'" (tmpfile 1 "ppm") output
+    (_, _) -> return ()
 
   where
+    tmpfile :: Int -> String -> String
+    tmpfile n "" = printf "%s/%d" tmpdir n
+    tmpfile n ext = printf "%s/%d.%s" tmpdir n ext
+
     getStrings :: [Content] -> [DetectedString]
     getStrings content = catMaybes $ map conv strings
       where
@@ -206,7 +245,7 @@ findPeak tile coord opts = do
           let d = map read s :: [Int]
           return $ DetectedString (d!!0) (d!!1) (d!!2) (d!!3) str
 
-    peakCoord ds =
+    peakCoord tile ds =
       let x = hpos ds
           y = (vpos ds) + (height ds) `div` 2
           west = toDouble (lonWest tile)
@@ -214,7 +253,9 @@ findPeak tile coord opts = do
           north = toDouble (latNorth tile)
           h = north - toDouble (latSouth tile)
       in
-        Coordinate (Double_ (west + w * (fromIntegral x) / (fromIntegral (xpixels tile)))) (Double_ (north - h * (fromIntegral y) / (fromIntegral (ypixels tile))))
+        Coordinate
+          (Double_ (west + w * (fromIntegral x) / (fromIntegral (xpixels tile))))
+          (Double_ (north - h * (fromIntegral y) / (fromIntegral (ypixels tile))))
           
   
 makeScriptToMarkCoord :: TileInfo -> Coordinate -> String -> String
