@@ -34,6 +34,7 @@ longitude (Coordinate lon _) = lon
 data Angle =
     Double_ Double
   | Tuple_ Int Int Double  -- 度,分,秒
+  deriving Eq
 
 -- |
 -- >>> toDouble (Double_ 123.4)
@@ -120,34 +121,34 @@ secondPart x@(Double_ _) = secondPart $ asTuple x
 -- 「秒」のかわりに「"」も使える
 -- 「秒」は省略可
 --
--- >>> (read "45.1234") :: Angle
--- Double_ 45.1234
--- >>> (read "45度12分34.56秒") :: Angle
--- Tuple_ 45 12 34.56
--- >>> (read "45°12'34.56\"") :: Angle
--- Tuple_ 45 12 34.56
+-- >>> (read "45.1234") == Double_ 45.1234
+-- True
+-- >>> (read "45度12分34.56秒") == Tuple_ 45 12 34.56
+-- True
+-- >>> (read "45°12'34.56\"") == Tuple_ 45 12 34.56
+-- True
 --
 -- 秒のマークは省略可
--- >>> (read "45:12:34.56") :: Angle
--- Tuple_ 45 12 34.56
+-- >>> (read "45:12:34.56") == Tuple_ 45 12 34.56
+-- True
 --
 -- 混ぜても良い。
--- >>> (read "45°12分34.56") :: Angle
--- Tuple_ 45 12 34.56
+-- >>> (read "45°12分34.56") == Tuple_ 45 12 34.56
+-- True
 --
 -- 数字に0を前置してよい
--- >>> (read "45°02分04.56") :: Angle
--- Tuple_ 45 2 4.56
+-- >>> (read "45°02分04.56") == Tuple_ 45 2 4.56
+-- True
 --
 -- 秒の小数点はあってもなくてもよい
--- >>> (read "45°02分04") :: Angle
--- Tuple_ 45 2 4.0
+-- >>> (read "45°02分04") == Tuple_ 45 2 4
+-- True
 --
 -- 秒以外には小数点を書けない
 -- >>> (readMaybe "45°2.0分04秒") :: Maybe Angle
 -- Nothing
--- >>> (readMaybe "45°2分4.5秒") :: Maybe Angle
--- Just (Tuple_ 45 2 4.5)
+-- >>> (readMaybe "45°2分4.5秒") == Just (Tuple_ 45 2 4.5)
+-- True
 
 instance Read Angle where
   readPrec = do

@@ -38,7 +38,7 @@ gudermann y = 180.0 / pi * asin (tanh y)
 -- GSIのタイルは、経度 [-180°, 180°] 緯度 [85.0511°, -85.011°] の範囲をメルカトル図法に射影して、 縦横 2^(ズームレベル) に分割する
 --  
 -- >>> Coordinate (Double_ 139.10177) (Double_ 35.865422)
--- Coordinate (Double_ 139.10177) (Double_ 35.865422)
+-- Coordinate 139°6'6.372" 35°51'55.519"
 --
 -- >>> let (Right t) = tileForCoordinate 17 $ Coordinate (Double_ 139.10177) (Double_ 35.865422)
 -- >>> (xidx t, yidx t)
