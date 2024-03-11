@@ -11,6 +11,7 @@ module GeoAngle ( Angle(..)
 
 import GHC.Read
 import Text.ParserCombinators.ReadPrec ()
+import Text.Printf
 import qualified Text.Read.Lex as L
 import Text.Read
 
@@ -33,7 +34,6 @@ longitude (Coordinate lon _) = lon
 data Angle =
     Double_ Double
   | Tuple_ Int Int Double  -- 度,分,秒
-  deriving Show
 
 -- |
 -- >>> toDouble (Double_ 123.4)
@@ -71,7 +71,9 @@ asTuple (Double_ f) =
   in
     Tuple_ (- i) m s
 
-
+instance Show Angle where
+  show (Tuple_ d m s)  = (show d) ++ "°" ++ (show m) ++ "'" ++ (printf "%.3f" s) ++ "\""
+  show a = show $ asTuple a
 
 negate :: Angle -> Angle
 negate (Double_ f) = (Double_ (- f))
