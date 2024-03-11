@@ -175,10 +175,15 @@ findPeak tile coord opts = do
   callCommand  "tesseract tmp2.png tmp3 --psm 11 alto"
   strings <- readFile "tmp3.xml" >>=  pure . getStrings . parseXML
   if null strings
-    then hPutStrLn stderr "can't find any peak"
+    then do
+      hPutStrLn stderr "can't find any peak"
+      case (optMark opts, optOutputImageFile opts) of
+        (_, Nothing) -> return()
+        (False, _) -> return ()    -- already saved in that name
+        (True, (Just f)) -> callCommand $ printf "mv '%s' '%s'" tileimg f
     else do
       let peak = peakCoord $ head strings
-      putStrLn $ printf "Peak=%s" (show peak)
+      putStrLn $ printf "Peak=%s,%s" (show (longitude peak)) (show (latitude peak))
       case (optMark opts, optOutputImageFile opts) of
         (True, Just output) -> do
           let script = makeScriptToMarkCoord tile coord "blue"
@@ -219,7 +224,7 @@ makeScriptToMarkCoord tile coord color =
       limitx _x = max 0 $ min _x (xpixels tile - 1)
       limity _y = max 0 $ min _y ((ypixels tile) - 1)
   in
-    printf "setcolor %s; line %d %d %d %d; line %d %d %d %d"
+    printf "setcolor %s; line %d %d %d %d; line %d %d %d %d;"
           color
           (limitx (x - sz)) y
           (limitx (x + sz)) y
