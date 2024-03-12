@@ -4,6 +4,8 @@ module GsiTile (
   , tileForCoordinate
   , url
   , extendToEast
+  , extendToNorth
+  , extendToSouth
   ) where
 
 import Data.Bits (shift)
@@ -29,6 +31,8 @@ data TileInfo = TileInfo
 -- メルカルト図法のY軸: ランベルト関数
 lambert:: Floating a => a -> a
 lambert deg = log $ tan $ pi/4 + pi*deg/180.0/2
+
+yTop = lambert 85.0511
 
 -- ランベルト関数の逆関数: グーデルマン関数
 gudermann:: Floating a => a -> a
@@ -57,11 +61,10 @@ tileForCoordinate zoom c =
     split = 1 `shift` zoom :: Int
     xstep = 360.0 / (fromIntegral split)
     xidx_ = floor $ (toDouble (longitude c) + 180.0) / xstep
-    y_top = lambert 85.0511
-    ystep = y_top / fromIntegral (split `div` 2)
-    yidx_ = floor $ (y_top - lambert (toDouble $ latitude c)) / ystep
-    latNorth_ = gudermann $ y_top - ystep * (fromIntegral yidx_)
-    latSouth_ = gudermann $ y_top - ystep * (fromIntegral yidx_ + 1)
+    ystep = yTop / fromIntegral (split `div` 2)
+    yidx_ = floor $ (yTop - lambert (toDouble $ latitude c)) / ystep
+    latNorth_ = gudermann $ yTop - ystep * (fromIntegral yidx_)
+    latSouth_ = gudermann $ yTop - ystep * (fromIntegral yidx_ + 1)
     lonWest_ = xstep * (fromIntegral xidx_) - 180.0
     lonEast_ = lonWest_ + xstep
 
@@ -114,7 +117,7 @@ getCoord tile (x, y) = Coordinate lon lat
     tiSouth = (toDouble $ latSouth tile)
     width = tiEast - tiWest
     lon = Double_ (tiWest + width * (fromIntegral x) / (fromIntegral (xpixels tile)))
-    -- XXX use lambert and gundermann
+    -- XXX use lambert and gudermann
     height = tiNorth - tiSouth
     lat = Double_ (tiNorth - height * (fromIntegral y) / (fromIntegral (ypixels tile)))
 
@@ -124,6 +127,8 @@ getCoord tile (x, y) = Coordinate lon lat
 -- >>> let (Right t) = tileForCoordinate 17 $ Coordinate (Double_ 139.10177) (Double_ 35.865422)
 -- >>> let (Right te) = tileForCoordinate 17 $ Coordinate (Double_ 139.103) (Double_ 35.865422)
 -- >>> let (Right tw) = tileForCoordinate 17 $ Coordinate (Double_ 139.099) (Double_ 35.865422)
+-- >>> let (Right tn) = tileForCoordinate 17 $ Coordinate (Double_ 139.103) (Double_ 35.867)
+-- >>> let (Right ts) = tileForCoordinate 17 $ Coordinate (Double_ 139.103) (Double_ 35.863)
 -- >>> let t' = extendToEast t
 -- >>> (xspan t', yspan t', xpixels t', ypixels t', zoomLevel t')
 -- (2,1,512,256,17)
@@ -143,6 +148,8 @@ getCoord tile (x, y) = Coordinate lon lat
 -- (1,2,256,512,17)
 -- >>> (xidx t', yidx t', lonWest t', lonEast t', latNorth t') == (xidx t, yidx t, lonWest t, lonEast t, latNorth t)
 -- True
+-- >>> ((printf "%.10f" (toDouble $ latSouth t')) :: String) == printf "%.10f" (toDouble $ latSouth ts)
+-- True
 
 extendToEast:: TileInfo -> TileInfo
 extendToEast tile@(TileInfo xidx_ yidx_ zoom north south west east xpix ypix xspan_ yspan_) =
@@ -159,6 +166,19 @@ extendToWest tile@(TileInfo xidx_ yidx_ zoom north south west east xpix ypix xsp
 
 
 extendToNorth:: TileInfo -> TileInfo
-extendToNorth t = t
+extendToNorth (TileInfo xidx_ yidx_ zoom north south west east xpix ypix xspan_ yspan_) =
+  TileInfo xidx_ (yidx_ - 1) zoom newNorth south west east xpix (ypix + 256) xspan_ (yspan_ + 1)
+
+  where
+    split = 1 `shift` zoom :: Int
+    ystep = yTop / fromIntegral (split `div` 2)
+    newNorth = Double_ $ gudermann $ lambert (toDouble north) + ystep
+
 extendToSouth:: TileInfo -> TileInfo
-extendToSouth t = t
+extendToSouth (TileInfo xidx_ yidx_ zoom north south west east xpix ypix xspan_ yspan_) =
+  TileInfo xidx_ yidx_ zoom north newSouth west east xpix (ypix + 256) xspan_ (yspan_ + 1)
+
+  where
+    split = 1 `shift` zoom :: Int
+    ystep = yTop / fromIntegral (split `div` 2)
+    newSouth = Double_ $ gudermann $ lambert (toDouble south) - ystep

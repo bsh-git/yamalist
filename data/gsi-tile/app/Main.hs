@@ -3,6 +3,7 @@ module Main where
 -- import Debug.Trace
 import Control.Monad (when, unless, forM) -- void
 --import Data.Bits
+import Data.Char (isDigit)
 import Data.Either.Combinators
 import Data.Foldable (foldlM)
 import Data.List
@@ -26,6 +27,7 @@ data CommandLineOpt =
   | OutputImageFile String
   | UseElev | UseOcr
   | XSpan String
+  | KeepOcrResult
   | Help
   deriving (Show)
 
@@ -39,6 +41,7 @@ options =
   , Option ['U']["url"] (NoArg ShowUrlOnly) "print only URL"
   , Option []["mark"] (NoArg MarkPoint) "add a mark in the tile"
   , Option ['T'] ["find-peak-ocr"] (NoArg UseOcr) "find a peak using OCR on the tile"
+  , Option ['K'] ["keep-ocr-result"] (NoArg KeepOcrResult) "keep output from OCR as OUTPUT with extension .xml"
   -- , Option ['P'] ["find-peak"] (NoArg UseElev) "find a peak using elevation data"
   , Option ['x']["xspan"] (ReqArg XSpan "N") "concatnate N tiles hollizontally"
   , Option ['?']["help"] (NoArg Help) "show help"
@@ -50,6 +53,7 @@ data ProgramOptions = ProgramOptions {
   , optMark :: Bool
   , optPeak :: PeakSearchingMethod
   , optXSpan :: Int
+  , optKeepOcr :: Bool
   , optHelp :: Bool
   } deriving Show
 
@@ -58,7 +62,7 @@ getOptions args = do
   (opts, a) <- case getOpt RequireOrder options args of
     (f,a,[]) -> return (f,a)
     (_,_,err) -> Left (concat err)
-  o <- foldlM checkOption (ProgramOptions Nothing False False NoMethod 1 False) opts
+  o <- foldlM checkOption (ProgramOptions Nothing False False NoMethod 1 False False) opts
 
   return (o, a)
 
@@ -72,9 +76,10 @@ getOptions args = do
                    MarkPoint -> return $ opts { optMark = True }
                    OutputImageFile s -> return $ opts { optOutputImageFile = Just s }
                    UseOcr -> return $ opts { optPeak = Ocr }
+                   KeepOcrResult -> return $ opts { optKeepOcr = True }
                    UseElev -> return $ opts { optPeak = ElevData }
                    XSpan n -> return $ opts { optXSpan = (read n) }
-                   
+
 main :: IO ()
 main = getArgs >>= (either optError main') . getOptions
   where
@@ -110,7 +115,7 @@ main = getArgs >>= (either optError main') . getOptions
       where conv s = maybeToRight
                        ("bad string for longitude/latitude: " ++ s)
                        (readMaybe s :: Maybe Angle)
-        
+
     doTile :: ProgramOptions -> TileInfo -> Coordinate -> IO ()
     doTile opts tile' coord = do
       let tile = case (optXSpan opts) of
@@ -161,7 +166,7 @@ getTileImage tile coord outputfile opts tmpdir = do
                          makeScript tileimg
                          (if ".ppm" `isSuffixOf` outputfile then "" else " | pamtopng")
                          outputfile
-  
+
   where
     makeScript :: String
     makeScript = makeScriptToMarkCoord tile coord "blue"
@@ -173,18 +178,27 @@ downloadSingleTile tile xspanidx yspanidx filename =
     else callCommand $ printf "wget -nv -O '%s' '%s'" filename (url tile xspanidx yspanidx)
 
 downloadTileImage :: TileInfo -> FilePath -> FilePath -> IO ()
-downloadTileImage tile tmpdir output =
+downloadTileImage tile tmpdir output = do
+  hPutStrLn stderr (printf "downloadTIleImage: xspan=%d yspan=%d tmpdir=%s output=%s" (xspan tile) (yspan tile) tmpdir output)
   case (xspan tile, yspan tile) of
     (1, 1) -> downloadSingleTile tile 0 0 output
     (_, 1) -> makeRowImage tile tmpdir output 0
-    (_, ys) -> (forM [0..ys-1] $ \x -> return "") >>= concatVertical output
+    (_, ys) -> do
+      files <- forM [0..ys-1] $ \y -> do
+        let rowfile = printf "%s/row%d.ppm" tmpdir y
+        makeRowImage tile tmpdir rowfile y
+        return rowfile
+      concatVertical output files
 
   where
     concatVertical :: FilePath -> [FilePath] -> IO ()
-    concatVertical output files = return ()
+    concatVertical output files = do
+      let prog = (++) "pamcat -tb " $ intercalate " " $ map (printf "'%s'") files
+      callCommand $ (if ".ppm" `isSuffixOf` output then prog else prog ++ "| pamtopng") ++ " > " ++ output
 
 makeRowImage :: TileInfo -> FilePath -> FilePath -> Int -> IO ()
 makeRowImage tile tmpdir output yidx_ = do
+  hPutStrLn stderr (printf "makeRowImage: tmpdir=%s output=%s" tmpdir output)
   let toPpm = ".ppm" `isSuffixOf` output
   files <- forM [0 .. (xspan tile)-1] $ \xidx_ -> do
     let tmpname = printf "%s/%04d" tmpdir xidx_
@@ -203,23 +217,40 @@ data DetectedString = DetectedString {
   , txt :: String
   } deriving (Show)
 
+isElevationText :: DetectedString -> Bool
+isElevationText ds = isElevationText' (txt ds)
+isElevationText' ('A':rest) = isElevationText'' rest
+isElevationText' ('-':rest) = isElevationText'' rest
+isElevationText' s = isElevationText'' s
+isElevationText'' = all (\c -> c `elem` ".," || isDigit c)
+
 findPeak :: TileInfo -> Coordinate -> ProgramOptions -> FilePath -> IO ()
 findPeak tile_ coord opts tmpdir = do
   let (x, y) = getOffset tile_ coord
-  let tile = if ((fromIntegral x) / (fromIntegral (xpixels tile_))) < (0.5 :: Float) then tile_ else extendToEast tile_
+  let tile = mayExtendVertical y $ mayExtendHorizontal x tile_
+
   downloadTileImage tile tmpdir (tmpfile 1 "ppm")
   callCommand $ printf "ppmchange black black -remainder=white '%s' | pamtopng > '%s'" (tmpfile 1 "ppm") (tmpfile 2 "png")
-  callCommand $ printf "tesseract '%s' '%s' --psm 11 alto" (tmpfile 2 "png") (tmpfile 3 "")
-  strings <- readFile (tmpfile 3 "xml") >>=  pure . getStrings . parseXML
-  script <- if null strings
+
+  let ocrout = case ((optKeepOcr opts), (optOutputImageFile opts)) of
+        (False, _) -> (tmpfile 3 "")
+        (_, Nothing) -> (tmpfile 3 "")
+        (True, Just f) -> dropExtension f
+
+  callCommand $ printf "tesseract '%s' '%s' --psm 11 alto" (tmpfile 2 "png") ocrout
+
+
+  strings <- readFile (ocrout ++ ".xml") >>=  pure . getStrings . parseXML
+  let elvstrings = selectElevationText strings
+
+  script <- if null elvstrings
     then do
       hPutStrLn stderr "can't find any peak"
       pure $ makeScriptToMarkCoord tile coord "blue"
     else do
-      let peak = peakCoord tile $ head strings
+      let peak = peakCoord tile $ head elvstrings
       putStrLn $ printf "Peak=%s,%s" (show (longitude peak)) (show (latitude peak))
       pure $ makeScriptToMarkCoord tile coord "blue"
-             ++ "setcolor brown;"
              ++ (concat $ map makeScriptToBox strings)
              ++ makeScriptToMarkCoord tile peak "red"
 
@@ -246,8 +277,7 @@ findPeak tile_ coord opts tmpdir = do
           return $ DetectedString (d!!0) (d!!1) (d!!2) (d!!3) str
 
     peakCoord tile ds =
-      let x = hpos ds
-          y = (vpos ds) + (height ds) `div` 2
+      let (x, y) = adjustOffset ds (hpos ds, (vpos ds) + (height ds) `div` 2)
           west = toDouble (lonWest tile)
           w = toDouble (lonEast tile) - west
           north = toDouble (latNorth tile)
@@ -256,8 +286,30 @@ findPeak tile_ coord opts tmpdir = do
         Coordinate
           (Double_ (west + w * (fromIntegral x) / (fromIntegral (xpixels tile))))
           (Double_ (north - h * (fromIntegral y) / (fromIntegral (ypixels tile))))
-          
-  
+
+    dropExtension :: String -> String
+    dropExtension name =
+      let pos = elemIndices '.' name in
+        if null pos then name
+        else take (last pos) name
+
+    selectElevationText :: [DetectedString] ->[DetectedString]
+    selectElevationText = filter isElevationText
+
+    adjustOffset ds (x, y) =
+      case (txt ds) of
+        ('A':_) -> (x + 10, y)
+        _       -> (x+2, y+2)
+
+    mayExtendHorizontal :: Int -> TileInfo -> TileInfo
+    mayExtendHorizontal x tile =
+      if x >= ((xpixels tile) `div` 2) then extendToEast tile else tile
+
+    mayExtendVertical y tile | y <  (ypixels tile) * 10 `div` 100 = extendToNorth tile
+    mayExtendVertical y tile | y >  (ypixels tile) * 90 `div` 100 = extendToSouth tile
+    mayExtendVertical y tile = tile
+
+
 makeScriptToMarkCoord :: TileInfo -> Coordinate -> String -> String
 makeScriptToMarkCoord tile coord color =
   let sz = 20
@@ -275,6 +327,7 @@ makeScriptToMarkCoord tile coord color =
 makeScriptToBox :: DetectedString -> String
 makeScriptToBox s =
       concat [printf "setpos %d %d;" (hpos s) (vpos s),
+              printf "setcolor %s;" (if isElevationText s then "green" else "brown"),
               printf "line_here %d 0;" (width s),
               printf "line_here 0 %d;" (height s),
               printf "line_here -%d 0;"(width s),
