@@ -69,7 +69,7 @@ asTuple (Double_ f) =
     Tuple_ (- i) m s
 
 instance Show Angle where
-  show (Tuple_ d m s)  = (show d) ++ "°" ++ (show m) ++ "'" ++ (printf "%.3f" s) ++ "\""
+  show (Tuple_ d m s)  = (show d) ++ "°" ++ (show m) ++ "'" ++ (printf "%.4f" s) ++ "\""
   show a = show $ asTuple a
 
 negate :: Angle -> Angle
