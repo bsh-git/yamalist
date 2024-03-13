@@ -1,6 +1,5 @@
 module Main where
 
--- import Debug.Trace
 import Control.Monad (when, unless, forM) -- void
 --import Data.Bits
 import Data.Char (isDigit)
@@ -20,6 +19,10 @@ import Text.XML.Light
 
 import GeoAngle
 import GsiTile
+
+--import Debug.Trace
+trace :: String -> a -> a
+trace _ e = e
 
 data CommandLineOpt =
     ShowUrlOnly
@@ -132,7 +135,7 @@ main = getArgs >>= (either optError main') . getOptions
       if optPeak opts == NoMethod
         then case (optOutputImageFile opts, optMark opts) of
                (Nothing, _) -> return ()
-               (Just outputfile, mark) -> withTmp $ getTileImage tile coord outputfile opts
+               (Just outputfile, _) -> withTmp $ getTileImage tile coord outputfile opts
         else withTmp $ findPeak tile coord opts
 
     printInfo :: TileInfo -> Coordinate -> IO ()
@@ -223,14 +226,16 @@ data DetectedString = DetectedString {
 --
 isElevationText :: DetectedString -> Bool
 isElevationText ds = isElevationText' (txt ds)
-isElevationText' (c:rest) | c `elem` "A-+"  = isElevationText'' rest
-isElevationText' s = isElevationText'' s
-isElevationText'' = all (\c -> c `elem` ".," || isDigit c)
+  where
+    isElevationText' (c:rest) | c `elem` "A-+*"  = isElevationText'' rest
+    isElevationText' s = isElevationText'' s
+    isElevationText'' = all (\c -> c `elem` ".," || isDigit c)
 
 findPeak :: TileInfo -> Coordinate -> ProgramOptions -> FilePath -> IO ()
 findPeak tile_ coord opts tmpdir = do
-  let (x, y) = getOffset tile_ coord
-  let tile = mayExtendVertical y $ mayExtendHorizontal x tile_
+  let (x', y') = getOffset tile_ coord
+  let tile = mayExtendVertical y' $ mayExtendHorizontal x' tile_
+  let (x, y) = getOffset tile coord
 
   downloadTileImage tile tmpdir (tmpfile 1 "ppm")
   callCommand $ printf "ppmchange black black -remainder=white '%s' | pamtopng > '%s'" (tmpfile 1 "ppm") (tmpfile 2 "png")
@@ -245,12 +250,12 @@ findPeak tile_ coord opts tmpdir = do
   strings <- readFile (ocrout ++ ".xml") >>=  pure . getStrings . parseXML
   let elvstrings = selectElevationText strings
 
-  script <- if null elvstrings
-    then do
+  script <- case chooseBestElvString (x, y) elvstrings of
+    Nothing -> do
       hPutStrLn stderr "can't find any peak"
       pure $ makeScriptToMarkCoord tile coord "blue"
-    else do
-      let peak = peakCoord tile $ head elvstrings
+    Just elvstr -> do
+      let peak = peakCoord tile elvstr
       putStrLn $ printf "Peak=%s,%s" (show (longitude peak)) (show (latitude peak))
       pure $ makeScriptToMarkCoord tile coord "blue"
              ++ (concat $ map makeScriptToBox strings)
@@ -309,8 +314,25 @@ findPeak tile_ coord opts tmpdir = do
 
     mayExtendVertical y tile | y <  (ypixels tile) * 10 `div` 100 = extendToNorth tile
     mayExtendVertical y tile | y >  (ypixels tile) * 90 `div` 100 = extendToSouth tile
-    mayExtendVertical y tile = tile
+    mayExtendVertical _ tile = tile
 
+    chooseBestElvString _ elvs | null elvs = Nothing
+    chooseBestElvString origpos elvs =
+      check $ foldl choose (Nothing, 99999) elvs
+
+      where
+        choose :: (Maybe DetectedString, Int) -> DetectedString -> (Maybe DetectedString, Int)
+        choose (e, distance) elv =
+          let x = hpos elv - fst origpos
+              y = vpos elv - snd origpos
+              d = x * x + y + y
+          in
+            trace (show (hpos elv, fst origpos, hpos elv - fst origpos, vpos elv, snd origpos, vpos elv - snd origpos))
+                  (if (d < distance) then (Just elv, d) else (e, distance))
+
+        check (Nothing, _) = Nothing
+        check (Just _, d) | d >= 10000 = (trace "too far" Nothing)
+        check (Just e, _) = Just e
 
 makeScriptToMarkCoord :: TileInfo -> Coordinate -> String -> String
 makeScriptToMarkCoord tile coord color =
