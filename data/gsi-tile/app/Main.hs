@@ -90,7 +90,7 @@ main = getArgs >>= (either optError main') . getOptions
       else if length args /= 2 then
         usage >>= hPutStrLn stderr >> die "too few or too many arguments"
       else do
-        -- putStrLn $ show opts
+        -- ePutStrLn show opts
         case getTile args of
           Right (tile, c) -> doTile opts tile c
           Left msg -> die msg
@@ -217,10 +217,13 @@ data DetectedString = DetectedString {
   , txt :: String
   } deriving (Show)
 
+--
+-- 国土地理院地図の標高表記に対してtesseract OCRすると、 -NNNN や +NNNN と認識される (黒ドットが -や+ と認識される)
+-- 三角点がある場合は、ANNNN
+--
 isElevationText :: DetectedString -> Bool
 isElevationText ds = isElevationText' (txt ds)
-isElevationText' ('A':rest) = isElevationText'' rest
-isElevationText' ('-':rest) = isElevationText'' rest
+isElevationText' (c:rest) | c `elem` "A-+"  = isElevationText'' rest
 isElevationText' s = isElevationText'' s
 isElevationText'' = all (\c -> c `elem` ".," || isDigit c)
 
@@ -238,7 +241,6 @@ findPeak tile_ coord opts tmpdir = do
         (True, Just f) -> dropExtension f
 
   callCommand $ printf "tesseract '%s' '%s' --psm 11 alto" (tmpfile 2 "png") ocrout
-
 
   strings <- readFile (ocrout ++ ".xml") >>=  pure . getStrings . parseXML
   let elvstrings = selectElevationText strings
@@ -332,3 +334,7 @@ makeScriptToBox s =
               printf "line_here 0 %d;" (height s),
               printf "line_here -%d 0;"(width s),
               printf "line_here 0 -%d;" (height s)]
+
+
+ePutStrLn :: String -> IO ()
+ePutStrLn = hPutStrLn stderr
