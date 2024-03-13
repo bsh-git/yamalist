@@ -72,6 +72,9 @@ instance Show Angle where
   show (Tuple_ d m s)  = (show d) ++ "°" ++ (show m) ++ "'" ++ (printf "%.4f" s) ++ "\""
   show a = show $ asTuple a
 
+--
+-- BUG!!: 整数部分が0の時に負号がなくなってしまう
+--
 negate :: Angle -> Angle
 negate (Double_ f) = (Double_ (- f))
 negate (Tuple_ i m s) = (Tuple_ (- i) m s)
@@ -109,13 +112,15 @@ secondPart x@(Double_ _) = secondPart $ asTuple x
 -- |
 -- 文字列からの変換
 -- 経度・緯度の書式
---    nn度nn分nn秒
---    nn°nn'nn"
---    nn:nn:nn
+--    nn度mm分ss.sss秒
+--    nn°mm'ss.sss"
+--    nn:mm:ss.sss
 -- 「度」のかわりに「°」か「:」も使える
 -- 「分」のかわりに「'」か「:」も使える
 -- 「秒」のかわりに「"」も使える
 -- 「秒」は省略可
+--
+-- TODO: 国土地理院のページで見られる nn°nn'ss".sss  の表記に対応する
 --
 -- >>> (read "45.1234") == Double_ 45.1234
 -- True
