@@ -1,13 +1,16 @@
 module GeoAngle ( Angle(..)
                 , toDouble
-                , integralPart
+                , integerPart
                 , minutePart
                 , secondPart
                 , Coordinate(..)
                 , latitude
                 , longitude
+                , asDouble
+                , asTuple
                 ) where
 
+import Data.Word
 import GHC.Read
 import Text.ParserCombinators.ReadPrec ()
 import Text.Printf
@@ -29,84 +32,75 @@ longitude (Coordinate lon _) = lon
 --
 data Angle =
     Double_ Double
-  | Tuple_ Int Int Double  -- 度,分,秒
+  | Tuple_ Bool Word8 Word8 Double  -- 負号,度,分,秒
   deriving Eq
 
 -- |
 -- >>> toDouble (Double_ 123.4)
 -- 123.4
--- >>> toDouble (Tuple_ 135 30 3.6)
+-- >>> toDouble (Tuple_ False 135 30 3.6)
 -- 135.501
 toDouble :: Angle -> Double
 toDouble (Double_ f) = f
-toDouble (Tuple_ i m s) | i >= 0 = (fromIntegral i) + (fromIntegral m) / 60.0 + s / 3600.0
-toDouble (Tuple_ i m s) =  - ( (fromIntegral (- i)) + (fromIntegral m) / 60.0 + s / 3600.0)
+toDouble (Tuple_ False i m s) = (fromIntegral i) + (fromIntegral m) / 60.0 + s / 3600.0
+toDouble (Tuple_ True i m s) = negate ( (fromIntegral i) + (fromIntegral m) / 60.0 + s / 3600.0)
 
-{-
 -- |
 -- >>> asDouble (Double_ 123.4)
--- (Double_ 123.4)
--- >>> asDouble (Tuple_ 135 30 3.6)
--- (Double_ 135.501)
+-- 123.4
+-- >>> asDouble (Tuple_ False 135 30 3.6)
+-- 135.501
 asDouble :: Angle -> Angle
 asDouble f@(Double_ _) = f
-asDouble x@(Tuple_ _ _ _) = Double_ (toDouble x)
--}
+asDouble x@(Tuple_ _ _ _ _) = Double_ (toDouble x)
 
 asTuple :: Angle -> Angle
-asTuple t@(Tuple_ _ _ _) = t
+asTuple t@(Tuple_ _ _ _ _) = t
 asTuple (Double_ f) | f >= 0 =
   let i = floor f
       r = 60 * (f - (fromIntegral i))
       m = floor r
       r2 = 60 * (r - (fromIntegral m))
   in
-    Tuple_ i m r2
+    Tuple_ False i m r2
 
 asTuple (Double_ f) =
-  let (Tuple_ i m s) = asTuple (Double_ (- f))
+  let (Tuple_ _ i m s) = asTuple (Double_ (- f))
   in
-    Tuple_ (- i) m s
+    Tuple_ True i m s
 
 instance Show Angle where
-  show (Tuple_ d m s)  = (show d) ++ "°" ++ (show m) ++ "'" ++ (printf "%.4f" s) ++ "\""
-  show a = show $ asTuple a
-
---
--- BUG!!: 整数部分が0の時に負号がなくなってしまう
---
-negate :: Angle -> Angle
-negate (Double_ f) = (Double_ (- f))
-negate (Tuple_ i m s) = (Tuple_ (- i) m s)
+  show (Tuple_ sgn d m s)  = (if sgn then "-" else "") ++ (show d) ++ "°" ++ (show m) ++ "'" ++ (printf "%.4f" s) ++ "\""
+  show (Double_ f) = show f
 
 -- |
 -- 角度の整数部分(「度]の部分)
 --
--- >>> integralPart (Tuple_ 135 2 3.5)
+-- >>> integerPart (Tuple_ True 135 2 3.5)
 -- 135
--- >>> integralPart (Double_ (- 135.123))
--- -135
-integralPart:: Angle -> Int
-integralPart (Tuple_ i _ _) = i
-integralPart (Double_ f) | f >= 0 = floor f
-integralPart (Double_ f)          = - ( floor (- f))
+-- >>> integerPart (Double_ (- 135.123))
+-- 135
+integerPart:: Angle -> Word8
+integerPart (Tuple_ _ i _ _) = i
+integerPart (Double_ f) | f >= 0 = floor f
+integerPart (Double_ f)         = floor (- f)
 
 -- |
--- >>> minutePart (Tuple_ 135 2 3.5)
+-- >>> minutePart (Tuple_ False 135 2 3.5)
 -- 2
 -- >>> minutePart (Double_ 135.501)
 -- 30
-minutePart:: Angle -> Int
-minutePart (Tuple_ _ m _) = m
+minutePart:: Angle -> Word8
+minutePart (Tuple_ _ _ m _) = m
 minutePart x@(Double_ _) = minutePart $ asTuple x
 
 -- |
--- >>> secondPart (Tuple_ 135 2 3.5)
+-- >>> secondPart (Tuple_ False 135 2 3.5)
 -- 3.5
 -- >>> Text.Printf.printf "%.6f" $ secondPart (Double_ 135.501)
 -- 3.600000
 secondPart:: Angle -> Double
-secondPart (Tuple_ _ _ s) = s
+secondPart (Tuple_ _ _ _ s) = s
 secondPart x@(Double_ _) = secondPart $ asTuple x
 
 -- |
@@ -124,31 +118,31 @@ secondPart x@(Double_ _) = secondPart $ asTuple x
 --
 -- >>> (read "45.1234") == Double_ 45.1234
 -- True
--- >>> (read "45度12分34.56秒") == Tuple_ 45 12 34.56
+-- >>> (read "45度12分34.56秒") == Tuple_ False 45 12 34.56
 -- True
--- >>> (read "45°12'34.56\"") == Tuple_ 45 12 34.56
+-- >>> (read "45°12'34.56\"") == Tuple_ False 45 12 34.56
 -- True
 --
 -- 秒のマークは省略可
--- >>> (read "45:12:34.56") == Tuple_ 45 12 34.56
+-- >>> (read "45:12:34.56") == Tuple_ False 45 12 34.56
 -- True
 --
 -- 混ぜても良い。
--- >>> (read "45°12分34.56") == Tuple_ 45 12 34.56
+-- >>> (read "45°12分34.56") == Tuple_ False 45 12 34.56
 -- True
 --
 -- 数字に0を前置してよい
--- >>> (read "45°02分04.56") == Tuple_ 45 2 4.56
+-- >>> (read "45°02分04.56") == Tuple_ False 45 2 4.56
 -- True
 --
 -- 秒の小数点はあってもなくてもよい
--- >>> (read "45°02分04") == Tuple_ 45 2 4
+-- >>> (read "45°02分04") == Tuple_ False 45 2 4
 -- True
 --
 -- 秒以外には小数点を書けない
 -- >>> (readMaybe "45°2.0分04秒") :: Maybe Angle
 -- Nothing
--- >>> (readMaybe "45°2分4.5秒") == Just (Tuple_ 45 2 4.5)
+-- >>> (readMaybe "45°2分4.5秒") == Just (Tuple_ False 45 2 4.5)
 -- True
 
 instance Read Angle where
@@ -158,12 +152,12 @@ instance Read Angle where
       ('-':_) -> do
         (L.Symbol "-") <- lexP
         d <- readPrec'
-        return (GeoAngle.negate d)
+        return (negate d)
       _ -> readPrec'
 
     where
-      readPrec' = readPrecTuple <++ readPrecDouble 
-        
+      readPrec' = readPrecTuple <++ readPrecDouble
+
   readListPrec = readListPrecDefault
 
 readPrecDouble :: ReadPrec Angle
@@ -184,7 +178,7 @@ readPrecTuple = do
   (L.Number s) <- lexP
   optionalChar "秒\""
 
-  return (Tuple_ i' m' (fromRational (L.numberToRational s)))
+  return (Tuple_ (i' < 0) (abs i') m' (fromRational (L.numberToRational s)))
 
   where
     checkInteger n =
@@ -198,7 +192,7 @@ expectChar s = do
   if c `elem` s
     then return ()
     else pfail
-    
+
 optionalChar :: [Char] -> ReadPrec ()
 optionalChar s = do
   rest <- look
@@ -210,3 +204,25 @@ optionalChar s = do
                  return ()
               else
                 return ()
+---
+--- arithmatic operation on angles
+---
+
+-- |
+--
+-- >>> (Double_ 100.0) - (Double_ 99.0)
+-- 1.0
+-- >>> (Double_ 100.0) + (Double_ 99.0)
+-- 199.0
+--
+instance Num Angle where
+  a0 + a1 = Double_ $ (toDouble a0) + (toDouble a1)
+  a0 - a1 = Double_ $ (toDouble a0) - (toDouble a1)
+  _ * _ = undefined
+  abs = Double_ . abs . toDouble
+  signum = Double_ . signum . toDouble
+  fromInteger n | n < 0 = Tuple_ True (- (fromInteger n)) 0 0.0
+  fromInteger n = Tuple_ False (fromInteger n) 0 0.0
+
+  negate (Double_ f) = Double_ (- f)
+  negate (Tuple_ sgn i m s) = Tuple_ (not sgn) i m s
