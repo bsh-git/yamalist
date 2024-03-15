@@ -20,9 +20,9 @@ import Text.XML.Light
 import GeoAngle
 import GsiTile
 
---import Debug.Trace
-trace :: String -> a -> a
-trace _ e = e
+import Debug.Trace
+--trace :: String -> a -> a
+--trace _ e = e
 
 data CommandLineOpt =
     ShowUrlOnly
@@ -309,8 +309,9 @@ findPeak tile_ coord opts tmpdir = do
         _       -> (x+2, y+2)
 
     mayExtendHorizontal :: Int -> TileInfo -> TileInfo
-    mayExtendHorizontal x tile =
-      if x >= ((xpixels tile) `div` 2) then extendToEast tile else tile
+    mayExtendHorizontal x tile | x >= ((xpixels tile) `div` 2) = extendToEast tile
+    mayExtendHorizontal x tile | x < (xpixels tile) * 10 `div` 100  = extendToWest tile
+    mayExtendHorizontal _ tile = tile
 
     mayExtendVertical y tile | y <  (ypixels tile) * 10 `div` 100 = extendToNorth tile
     mayExtendVertical y tile | y >  (ypixels tile) * 90 `div` 100 = extendToSouth tile
@@ -327,11 +328,11 @@ findPeak tile_ coord opts tmpdir = do
               y = vpos elv - snd origpos
               d = x * x + y + y
           in
-            trace (show (hpos elv, fst origpos, hpos elv - fst origpos, vpos elv, snd origpos, vpos elv - snd origpos))
+            trace (show (hpos elv, fst origpos, hpos elv - fst origpos, vpos elv, snd origpos, vpos elv - snd origpos, "distance", d))
                   (if (d < distance) then (Just elv, d) else (e, distance))
 
         check (Nothing, _) = Nothing
-        check (Just _, d) | d >= 10000 = (trace "too far" Nothing)
+        check (Just _, d) | d >= 5000 = (trace "too far" Nothing)
         check (Just e, _) = Just e
 
 makeScriptToMarkCoord :: TileInfo -> Coordinate -> String -> String

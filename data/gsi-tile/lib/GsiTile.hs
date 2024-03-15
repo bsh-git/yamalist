@@ -4,6 +4,7 @@ module GsiTile (
   , tileForCoordinate
   , url
   , extendToEast
+  , extendToWest
   , extendToNorth
   , extendToSouth
   ) where
@@ -152,14 +153,14 @@ getCoord tile (x, y) = Coordinate lon lat
 -- True
 
 extendToEast:: TileInfo -> TileInfo
-extendToEast tile@(TileInfo xidx_ yidx_ zoom north south west east xpix ypix xspan_ yspan_) =
+extendToEast tile@(TileInfo xidx_ yidx_ zoom north south west _ xpix ypix xspan_ yspan_) =
   TileInfo xidx_ yidx_ zoom north south west newEast (xpix + 256) ypix (xspan_ + 1) yspan_
   where
     Coordinate newEast _ = getCoord tile ((xpix + 256), 0)
 
 
 extendToWest:: TileInfo -> TileInfo
-extendToWest tile@(TileInfo xidx_ yidx_ zoom north south west east xpix ypix xspan_ yspan_) =
+extendToWest tile@(TileInfo xidx_ yidx_ zoom north south _ east xpix ypix xspan_ yspan_) =
   TileInfo (xidx_ -1) yidx_ zoom north south newWest east (xpix + 256) ypix (xspan_ + 1) yspan_
   where
     Coordinate newWest _ = getCoord tile (- 256, 0)
