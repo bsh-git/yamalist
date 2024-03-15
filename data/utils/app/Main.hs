@@ -64,10 +64,12 @@ generate1 (Feature {geometry=geom, properties=prop})  = do
         , longitude prop
         , latitude prop
         , altitude prop
+        , T.pack "-"    -- prefecture
         , urlToYamarecoID $ url1 prop
         , urlToYamapID $ url2 prop
         , T.pack (T.unpack listIdHannou100 ++ ":" ++ (show (number prop)))
-        , T.pack "-"
+        , T.pack "-"  -- source
+        , T.pack "-"  -- peak correction
         ]
   case splitAlias (name prop) of
     Nothing -> putNameLine id "N" $ name prop

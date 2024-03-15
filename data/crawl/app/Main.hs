@@ -131,13 +131,14 @@ getList opts tmpdir listId = do
     convertTr forest = map convertTd (subForest forest)
 
     outputResult coordList number (ColMountainName name yomi ptid) elev' = do
+      let prefectures = "-"
       let num = (read (T.unpack number)) :: Int
       let elev = elevToFloat elev'
       let (lons, lats) =
             case coordList !? (num - 1) of
               Just (lon, lat) -> (show lon, show lat)
               _ -> ("-", "-")
-      putStrLn $ intercalate "\t" [show num, "D", lons, lats, show elev, (maybe "" show ptid), "?", "?", "-", "r"]
+      putStrLn $ intercalate "\t" [show num, "D", lons, lats, show elev, prefectures, (maybe "" show ptid), "?", "?", "-", "r", "-"]
       outputNames num name yomi
 
     outputNames :: Int -> T.Text -> T.Text -> IO ()

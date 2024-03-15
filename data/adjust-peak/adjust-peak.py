@@ -36,6 +36,8 @@ def main():
 #GSI_TILE = 'gsi-tile'
 GSI_TILE = '/home/bsh/Proj/yamalist/data/gsi-tile/dist-newstyle/build/x86_64-linux/ghc-9.0.2/gsi-tile-0.1.0.0/x/gsi-tile/build/gsi-tile/gsi-tile'
 
+PEAK_ADJUST_COL=11
+
 def process(args, input):
     for line in input:
         line = line.removesuffix("\n")
@@ -56,11 +58,11 @@ def process(args, input):
             snkk = lookup_sankaku(lon, lat)
             if snkk:
                 fields[2:4] = ["{}".format(snkk.lon), "{}".format(snkk.lat)]
-                fields[9] = snkk.code
+                fields[PEAK_ADJUST_COL] = snkk.code
                 print("\t".join(fields))
                 continue
 
-            if not (fields[9] == "" or fields[9] == "-") and not args.force:
+            if not (fields[PEAK_ADJUST_COL] == "" or fields[PEAK_ADJUST_COL] == "-") and not args.force:
                 print(line)
                 continue
 
@@ -85,7 +87,7 @@ def process(args, input):
                     peak = line.split(",")
             if peak:
                 fields[2:4] = peak
-                fields[9] = "o"
+                fields[PEAK_ADJUST_COL] = "o"
                 print("\t".join(fields))
             else:
                 print(line)
