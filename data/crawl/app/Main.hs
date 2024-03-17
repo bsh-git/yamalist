@@ -2,6 +2,7 @@
 
 module Main where
 
+import Control.Applicative ((<|>))
 import qualified Data.ByteString as B
 import Data.Foldable (foldlM)
 import Data.List
@@ -33,14 +34,16 @@ data CommandLineOpt =
     YamarecoList String
   | SaveHtml FilePath
   | FromFile FilePath
+  | AssignId String
   | Help
   deriving (Show)
 
 options :: [OptDescr CommandLineOpt]
 options =
-  [ Option ['L']["list"] (ReqArg YamarecoList "LIST-ID") "get a list of mountains (ex. 百名山) from yamareco"
+  [ Option ['L']["list"] (ReqArg YamarecoList "YAMARECO-LIST-ID") "get a list of mountains (ex. 百名山) from yamareco"
   , Option ['S']["save-html"] (ReqArg SaveHtml "FILENAME") "save html from yamareco"
-  , Option ['F']["from-file"] (ReqArg FromFile "FILENAME") "use local file"
+  , Option ['F']["from-file"] (ReqArg FromFile "FILENAME") "crawl in a local file"
+  , Option ['i']["assign-id"] (ReqArg AssignId "LIST-ID") "Assign a List ID"
   , Option ['?']["help"] (NoArg Help) "show help"
   ]
 
@@ -48,6 +51,7 @@ data ProgramOptions = ProgramOptions
   { optSaveHtml :: Maybe FilePath
   , optListToGet :: Maybe Int
   , optFromFile :: Maybe FilePath
+  , optAssignId :: Maybe Int
   , optHelp :: Bool
   } deriving Show
 
@@ -56,9 +60,11 @@ getOptions args = do
   (opts, a) <- case getOpt RequireOrder options args of
     (f,a,[]) -> return (f,a)
     (_,_,err) -> Left (concat err)
-  o <- foldlM checkOption (ProgramOptions Nothing Nothing Nothing False) opts
+  o <- foldlM checkOption (ProgramOptions Nothing Nothing Nothing Nothing False) opts
 
-  return (o, a)
+  if (isJust $ optListToGet o) && (isJust $ optFromFile o)
+    then Left "-L and -F are mutually exclusive"
+    else return (o, a)
 
   where
     checkOption :: ProgramOptions -> CommandLineOpt -> Either String ProgramOptions
@@ -66,37 +72,51 @@ getOptions args = do
       return =<< case input of
                    Help -> return $ opts { optHelp = True }
                    SaveHtml f -> return $ opts { optSaveHtml = Just f }
-                   FromFile f -> return $ opts { optFromFile = Just f }
-                   YamarecoList id -> if isJust (optListToGet opts) then Left "too manu -L options"
-                                      else return opts { optListToGet = Just (read id) }
+                   FromFile f -> if isJust (optFromFile opts)
+                                 then Left "too mamy -F options"
+                                 else return $ opts { optFromFile = Just f }
+                   YamarecoList id -> if isJust (optListToGet opts)
+                                      then Left "too many -L options"
+                                      else return $ opts { optListToGet = Just (read id) }
+                   AssignId id -> return $ opts { optAssignId = readMaybe id }
 
 main :: IO ()
 main = getArgs >>= (either optError main') . getOptions
   where
     usage = getProgName >>= \p -> return $ "Usage: " ++ usageInfo (p ++ " [options]") options
     optError msg = do
+      getProgName >>= \p -> ePutStrLn $ p ++ ": error: " ++ msg ++ "\n"
       usage >>= ePutStrLn
-      die msg
+      exitFailure
 
     main' (opts, args) = do
       if optHelp opts
         then usage >>= putStrLn >> exitSuccess
         else
-          withSystemTempDirectory "tmpdir" $ main'' opts args
-        
-    main'' opts _ tmpdir =
-      mapM_ (getList opts tmpdir) $ maybeToList (optListToGet opts)
+          withSystemTempDirectory "tmpdir" $ getList opts
 
-getList :: ProgramOptions -> FilePath -> Int -> IO ()
-getList opts tmpdir listId = do
+getList :: ProgramOptions -> FilePath -> IO ()
+getList opts tmpdir = do
   converter <- ICUC.open "EUC-JP" Nothing
-  tags <- case (optSaveHtml opts, optFromFile opts) of
-    (_, Just input) -> parseFile converter input
-    (Nothing, Nothing) -> readList' converter (printf "%s/%d.html" tmpdir listId)
-    (Just output, Nothing) -> readList' converter output
+  tags <- case (optSaveHtml opts, optFromFile opts, optListToGet opts) of
+    (_, Just input, _) -> parseFile converter input
+    (Nothing, Nothing, Just listId) -> readList' converter listId (printf "%s/list%d.html" tmpdir listId)
+    (Just output, Nothing, Just listId) -> readList' converter listId output
+    (_, Nothing, Nothing) -> pure [] -- can't happen. already checked in getOptions
 
   let tags' = clean tags
-  
+
+  let yamarecoListId = (optListToGet opts) <|> fetchListId tags'
+
+  let (titletag,_) = getBlock "h2" $ dropWhile (\t -> getAttr "id" t /= Just "pagetitle") tags'
+  let title = case titletag of
+                (TagOpen "h2" _:ContentText txt:_) -> txt
+                _ -> T.pack ""
+
+  let listId = show $ fromMaybe 0 (optAssignId opts)
+  putStrLn $ intercalate "\t" $ [listId, "L", T.unpack title]
+                                ++ maybe [] (\id -> ["Yamareco", (show id)]) yamarecoListId
+
   let (ptlist, _) = getBlock "ul" $ dropWhile (not . isPtlistMapSelect) tags'
   let Right [tree] = tokensToForest ptlist
 --  putStrLn $ show $ (head forest)
@@ -120,7 +140,7 @@ getList opts tmpdir listId = do
 
     clean = removeScripts . removeWhite
 
-    readList' converter output = do
+    readList' converter listId output = do
       callCommand $ printf "wget -nv -O '%s' '%s'" output (listIdToUrl listId)
       parseFile converter output
 
@@ -276,9 +296,10 @@ removeWhite = filter (\t -> case t of
 -- >>> getAttr "class" (TagClose "xxx")
 -- Nothing
 getAttr :: T.Text -> Token -> Maybe T.Text
-getAttr aName (TagOpen _ attrs) =
-  find (\a -> let Attr n _ = a in n == aName) attrs >>= \(Attr _ v) -> Just v
+getAttr aName (TagSelfClose _ attrs) = getAttr' aName attrs
+getAttr aName (TagOpen _ attrs) = getAttr' aName attrs
 getAttr _ _ = Nothing
+getAttr' aName attrs = find (\a -> let Attr n _ = a in n == aName) attrs >>= \(Attr _ v) -> Just v
 
 getBlock0 :: T.Text -> [Token] -> [Token]
 getBlock0 name tokens = snd $ foldl getBalanced (0, []) tokens
@@ -307,6 +328,18 @@ getBlock name tokens =
         _ -> if lvl > 0 then getBlock' (lvl, out ++ [token]) rest
                  else getBlock' (lvl, out) rest
 
+fetchListId :: [Token] -> Maybe Int
+fetchListId tags = do
+  href <- find checkAlternate tags >>= getAttr "href"
+  --- let _= trace (show href) ()
+  let (_, _, _, grp) = href =~ T.pack "groupid=([0-9]+)$" :: (T.Text, T.Text, T.Text, [T.Text])
+  if null grp then Nothing else readMaybe $ T.unpack $ grp !! 0
+
+  where
+    checkAlternate tag =
+      case tag of
+        TagSelfClose "link" _ -> getAttr "rel" tag == Just "alternate"
+        _ -> False
 
 testdata = [
  TagOpen "div" [Attr "style" "margin-top: 5px;",Attr "class" "ptlist_map_select"],
