@@ -9,8 +9,7 @@ const Geocoder = require('@geolonia/open-reverse-geocoder')
 const GetOpt = require('node-getopt');
 
 const usage =
-      "Usage: node main.js [OPTION] LONGITUDE LATITUDE\n"
-
+      "Usage: node main.js [OPTION] LONGITUDE LATITUDE longitude latitude...\n"
 
 const args = GetOpt.create(
     [
@@ -47,33 +46,30 @@ async function main(args) {
     var proc, lon, lat
 
     var bad = ""
-    if (args.argv.length < 2) {
-        bad = "too few"
-    }
-    else if (args.argv.length > 2) {
-        bad = "too many"
-    }
-
-    if (bad) {
-        console.error(`${bad} arguments\n`)
+    if (args.argv.length % 2 != 0) {
+        console.error(`bad number of arguments: ${args.argv.length}\n`)
         console.error(usage)
 	process.exit(1)
     }
 
-    lon = parseFloat(args.argv[0])
-    lat = parseFloat(args.argv[1])
+    for (var i = 0; i < args.argv.length; i += 2) {
 
-    if (args.options['single']) {
-        let result = await single_shift_for_loc(undefined, lon, lat)
-        make_report(args.options, [result])
-    }
-    else {
-        let d = args.options['delta'] ?? 3
-        set_delta(d)
+        lon = parseFloat(args.argv[i])
+        lat = parseFloat(args.argv[i+1])
 
-        let result = await Promise.all(
-            range(9).map(async (idx) => { return await single_shift_for_loc(idx, lon, lat) } ) )
-        make_report(args.options, result)
+        if (args.options['single']) {
+            let result = await single_shift_for_loc(undefined, lon, lat)
+            make_report(args.options, [result])
+        }
+        else {
+            let d = args.options['delta'] ?? 3
+            set_delta(d)
+
+            let result = await Promise.all(
+                range(9).map(async (idx) => { return await single_shift_for_loc(idx, lon, lat) } ) )
+            make_report(args.options, result)
+        }
+
     }
 }
 
@@ -88,6 +84,8 @@ function make_report(opts, results) {
     else {
         var m = new Map()
         for (var r of results) {
+            if (r.code === '')
+                continue
             m.set(get_addr(opts['p'], r), 1)
         }
 
@@ -98,6 +96,7 @@ function make_report(opts, results) {
 function get_addr(flag_all, result) {
     if (flag_all)
         return result.prefecture + " " + result.city
+
     return result.prefecture
 }
 
