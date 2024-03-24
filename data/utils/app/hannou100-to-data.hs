@@ -48,7 +48,9 @@ instance FromJSON GeoJson
 
 
 generate :: GeoJson -> IO ()
-generate geoj = generate' (features geoj)
+generate geoj = do
+  TIO.putStrLn $ T.intercalate (T.pack "\t") [listIdHannou100, "L", T.pack "飯能百名山"]
+  generate' (features geoj)
 
 generate' :: [Feature] -> IO ()
 generate' [] = return ()
@@ -56,7 +58,7 @@ generate' (x:xs) = generate1 x >> generate' xs
 
 generate1 :: Feature -> IO ()
 generate1 (Feature {geometry=geom, properties=prop})  = do
-  let id = T.pack $ show $ hannouIdToOurID $ number prop
+  let id = T.pack $ show $ number prop
   TIO.putStrLn $
     T.intercalate (T.pack "\t") [
           id
@@ -67,7 +69,7 @@ generate1 (Feature {geometry=geom, properties=prop})  = do
         , T.pack "-"    -- prefecture
         , urlToYamarecoID $ url1 prop
         , urlToYamapID $ url2 prop
-        , T.pack (T.unpack listIdHannou100 ++ ":" ++ (show (number prop)))
+        , T.pack "-"
         , T.pack "-"  -- source
         , T.pack "-"  -- peak correction
         ]
@@ -87,9 +89,7 @@ splitAlias name =
     if Prelude.length a == 0 then Nothing
     else Just (pre, a !! 0)
 
-hannouIdToOurID :: Integer -> Integer
-hannouIdToOurID n = n - 1 + 10000
-listIdHannou100 = T.pack "4"
+listIdHannou100 = T.pack "1110"
 
 yamareco_url_regex = T.pack "https://www.yamareco.com/modules/yamainfo/ptinfo.php\\?ptid=([0-9]+)"
 

@@ -12,7 +12,7 @@ module GsiTile (
 import Data.Bits (shift)
 import Text.Printf
 
-import GeoAngle
+import  GeoAngle
 
 data TileInfo = TileInfo
   { xidx :: Int
@@ -56,7 +56,7 @@ tileForCoordinate :: Int -> Coordinate -> Either String TileInfo
 tileForCoordinate zoom _ | zoom < 0 = Left "Bad zoom"
 tileForCoordinate zoom _ | zoom > 18 = Left "Too big zoom"
 tileForCoordinate zoom c =
-  Right $ TileInfo xidx_ yidx_ zoom (Double_ latNorth_) (Double_ latSouth_) (Double_ lonWest_) (Double_ lonEast_) 256 256 1 1
+  Right $ TileInfo xidx_ yidx_ zoom (fromDouble latNorth_) (fromDouble latSouth_) (fromDouble lonWest_) (fromDouble lonEast_) 256 256 1 1
   where
     -- split = 2 ** zoom -- ズームレベルに応じて分割される
     split = 1 `shift` zoom :: Int
@@ -117,19 +117,19 @@ getCoord tile (x, y) = Coordinate lon lat
     tiNorth = (toDouble $ latNorth tile)
     tiSouth = (toDouble $ latSouth tile)
     width = tiEast - tiWest
-    lon = Double_ (tiWest + width * (fromIntegral x) / (fromIntegral (xpixels tile)))
+    lon = fromDouble (tiWest + width * (fromIntegral x) / (fromIntegral (xpixels tile)))
     -- XXX use lambert and gudermann
     height = tiNorth - tiSouth
-    lat = Double_ (tiNorth - height * (fromIntegral y) / (fromIntegral (ypixels tile)))
+    lat = fromDouble (tiNorth - height * (fromIntegral y) / (fromIntegral (ypixels tile)))
 
 -- |
 -- タイルを複数つないで大きくする
 --
--- >>> let (Right t) = tileForCoordinate 17 $ Coordinate (Double_ 139.10177) (Double_ 35.865422)
--- >>> let (Right te) = tileForCoordinate 17 $ Coordinate (Double_ 139.103) (Double_ 35.865422)
--- >>> let (Right tw) = tileForCoordinate 17 $ Coordinate (Double_ 139.099) (Double_ 35.865422)
--- >>> let (Right tn) = tileForCoordinate 17 $ Coordinate (Double_ 139.103) (Double_ 35.867)
--- >>> let (Right ts) = tileForCoordinate 17 $ Coordinate (Double_ 139.103) (Double_ 35.863)
+-- >>> let (Right t) = tileForCoordinate 17 $ Coordinate (fromDouble 139.10177) (fromDouble 35.865422)
+-- >>> let (Right te) = tileForCoordinate 17 $ Coordinate (fromDouble 139.103) (fromDouble 35.865422)
+-- >>> let (Right tw) = tileForCoordinate 17 $ Coordinate (fromDouble 139.099) (fromDouble 35.865422)
+-- >>> let (Right tn) = tileForCoordinate 17 $ Coordinate (fromDouble 139.103) (fromDouble 35.867)
+-- >>> let (Right ts) = tileForCoordinate 17 $ Coordinate (fromDouble 139.103) (fromDouble 35.863)
 -- >>> let t' = extendToEast t
 -- >>> (xspan t', yspan t', xpixels t', ypixels t', zoomLevel t')
 -- (2,1,512,256,17)
@@ -173,7 +173,7 @@ extendToNorth (TileInfo xidx_ yidx_ zoom north south west east xpix ypix xspan_ 
   where
     split = 1 `shift` zoom :: Int
     ystep = yTop / fromIntegral (split `div` 2)
-    newNorth = Double_ $ gudermann $ lambert (toDouble north) + ystep
+    newNorth = fromDouble $ gudermann $ lambert (toDouble north) + ystep
 
 extendToSouth:: TileInfo -> TileInfo
 extendToSouth (TileInfo xidx_ yidx_ zoom north south west east xpix ypix xspan_ yspan_) =
@@ -182,4 +182,4 @@ extendToSouth (TileInfo xidx_ yidx_ zoom north south west east xpix ypix xspan_ 
   where
     split = 1 `shift` zoom :: Int
     ystep = yTop / fromIntegral (split `div` 2)
-    newSouth = Double_ $ gudermann $ lambert (toDouble south) - ystep
+    newSouth = fromDouble $ gudermann $ lambert (toDouble south) - ystep

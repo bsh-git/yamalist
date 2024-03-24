@@ -1,4 +1,8 @@
-module GeoAngle ( Angle(..)
+module GeoAngle ( Angle
+                , fromIntegralAngle
+--                , fromRationalAngle
+                , fromSecond
+                , fromDouble
                 , toDouble
                 , integerPart
                 , minutePart
@@ -33,7 +37,34 @@ longitude (Coordinate lon _) = lon
 data Angle =
     Double_ Double
   | Tuple_ Bool Word8 Word8 Double  -- 負号,度,分,秒
-  deriving Eq
+
+-- |
+-- >>> fromIntegralAngle 123
+-- 123°0'0.0000"
+-- >>> fromIntegralAngle (-85)
+-- -85°0'0.0000"
+fromIntegralAngle:: (Integral a) => a -> Angle
+fromIntegralAngle n = if n >= 0
+                      then Tuple_ False (fromIntegral n) 0 0
+                      else Tuple_ True (- (fromIntegral n)) 0 0
+
+-- |
+-- >>> fromSecond 30
+-- 0°0'30.0000"
+-- >>> fromSecond (-30)
+-- -0°0'30.0000"
+-- >>> asTuple $ fromSecond 120
+-- 0°2'0.0000"
+fromSecond :: Double -> Angle
+fromSecond s | s < 0 = negate ( fromSecond (- s))
+fromSecond s | s < 60.0 = Tuple_ False 0 0 ( s)
+fromSecond s = Double_ (s / 3600.0)
+
+-- |
+-- >>> fromDouble 123.4
+-- 123.4
+fromDouble:: Double -> Angle
+fromDouble f = (Double_ f)
 
 -- |
 -- >>> toDouble (Double_ 123.4)
@@ -64,10 +95,7 @@ asTuple (Double_ f) | f >= 0 =
   in
     Tuple_ False i m r2
 
-asTuple (Double_ f) =
-  let (Tuple_ _ i m s) = asTuple (Double_ (- f))
-  in
-    Tuple_ True i m s
+asTuple (Double_ f) = negate $ asTuple (Double_ (- f))
 
 instance Show Angle where
   show (Tuple_ sgn d m s)  = (if sgn then "-" else "") ++ (show d) ++ "°" ++ (show m) ++ "'" ++ (printf "%.4f" s) ++ "\""
@@ -226,3 +254,35 @@ instance Num Angle where
 
   negate (Double_ f) = Double_ (- f)
   negate (Tuple_ sgn i m s) = Tuple_ (not sgn) i m s
+
+instance Eq Angle where
+  (==) (Double_ a) (Double_ b) = a == b
+  (==) (Tuple_ fa da ma sa) (Tuple_ fb db mb sb) = fa == fb && da == db && ma == mb && sa==sb
+  (==) a b = toDouble a == toDouble b
+
+-- |
+--
+-- >>> compare (Double_ 123.0) (Double_ 124.0)
+-- LT
+-- >>> compare (Double_ 125.0) (Double_ 124.0)
+-- GT
+-- >>> compare (Double_ 126.2) (Double_ 126.2)
+-- EQ
+-- >>> compare (Tuple_ False 135 0 1) (Tuple_ False 135 1 2)
+-- LT
+-- >>> compare (Tuple_ False 135 0 1) (Tuple_ False 135 0 1)
+-- EQ
+-- >>> compare (Tuple_ False 135 0 1) (Tuple_ True 135 0 1)
+-- GT
+instance Ord Angle where
+  compare (Tuple_ True _ _ _) (Tuple_ False _ _ _) = LT
+  compare (Tuple_ False _ _ _) (Tuple_ True _ _ _) = GT
+  compare a@(Tuple_ True _ _ _) b@(Tuple_ True _ _ _) = case compare (negate a) (negate b) of
+                                                          EQ -> EQ
+                                                          LT -> GT
+                                                          GT -> LT
+  compare (Tuple_ False da ma sa) (Tuple_ False db mb sb) =
+    compare da db |>= compare ma mb |>= compare sa sb
+    where a |>= b = if a == EQ then b else a
+
+  compare a b = compare (toDouble a) (toDouble b)

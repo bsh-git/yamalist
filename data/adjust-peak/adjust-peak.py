@@ -33,8 +33,8 @@ def main():
     with fileinput.FileInput(files = args.inputfiles) as input:
         process(args, input)
 
-#GSI_TILE = 'gsi-tile'
-GSI_TILE = '/home/bsh/Proj/yamalist/data/gsi-tile/dist-newstyle/build/x86_64-linux/ghc-9.0.2/gsi-tile-0.1.0.0/x/gsi-tile/build/gsi-tile/gsi-tile'
+GSI_TILE = 'gsi-tile'
+#GSI_TILE = '/home/bsh/Proj/yamalist/data/gsi-tile/dist-newstyle/build/x86_64-linux/ghc-9.0.2/gsi-tile-0.1.0.0/x/gsi-tile/build/gsi-tile/gsi-tile'
 
 PEAK_ADJUST_COL=11
 

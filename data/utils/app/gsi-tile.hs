@@ -195,9 +195,9 @@ downloadTileImage tile tmpdir output = do
 
   where
     concatVertical :: FilePath -> [FilePath] -> IO ()
-    concatVertical output files = do
+    concatVertical output' files = do
       let prog = (++) "pamcat -tb " $ intercalate " " $ map (printf "'%s'") files
-      callCommand $ (if ".ppm" `isSuffixOf` output then prog else prog ++ "| pamtopng") ++ " > " ++ output
+      callCommand $ (if ".ppm" `isSuffixOf` output' then prog else prog ++ "| pamtopng") ++ " > " ++ output
 
 makeRowImage :: TileInfo -> FilePath -> FilePath -> Int -> IO ()
 makeRowImage tile tmpdir output yidx_ = do
@@ -291,8 +291,8 @@ findPeak tile_ coord opts tmpdir = do
           h = north - toDouble (latSouth tile)
       in
         Coordinate
-          (Double_ (west + w * (fromIntegral x) / (fromIntegral (xpixels tile))))
-          (Double_ (north - h * (fromIntegral y) / (fromIntegral (ypixels tile))))
+          (fromDouble (west + w * (fromIntegral x) / (fromIntegral (xpixels tile))))
+          (fromDouble (north - h * (fromIntegral y) / (fromIntegral (ypixels tile))))
 
     dropExtension :: String -> String
     dropExtension name =
