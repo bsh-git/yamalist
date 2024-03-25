@@ -1,28 +1,7 @@
 {
   "type": "FeatureCollection",
   "features": [
-    {
-      "type": "Feature",
-      "geometry": {
-        "type": "Point",
-        "coordinates": [
-139.1013861111111,
-35.86527777777778
-
- //         15484695.597307954,
- //         4282117.401452959
-        ]
-      },
-      "properties": {
-        "number": 1,
-        "name": "日向沢の峰",
-        "altitude": "1356",
-        "latitude": "35°51'55.4665\"",
-        "longitude": "139°6'4.9941\"",
-        "url1": "https://www.yamareco.com/modules/yamainfo/ptinfo.php?ptid=3017",
-        "url2": "https://yamap.com/landmarks/9059"
-      }
-    },
+  
     {
       "type": "Feature",
       "geometry": {
