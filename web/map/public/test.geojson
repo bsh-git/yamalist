@@ -1,7 +1,16 @@
 {
   "type": "FeatureCollection",
   "features": [
-  
+
+    {
+        "type": "Point", 
+        "coordinates": [139.1013861111111, 35.86527777777778],
+        "properties": {
+          "name": "mountain1" 
+        }
+    },
+
+
     {
       "type": "Feature",
       "geometry": {
